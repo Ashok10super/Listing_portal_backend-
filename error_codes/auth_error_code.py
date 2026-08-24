@@ -1,0 +1,23 @@
+import enum
+
+
+class AuthErrorCode(enum.Enum):
+    AU101 = "Invalid Json Data"
+    AU102 = "Incorrect Payload"
+    AU103 = "Email is required"
+    AU104 = "Phone is missing"
+    AU105 = "Role is required"
+    AU106 = "Password is required"
+    AU107 = "Internal Server Error"
+    AU108 = "Payload is required"
+    AU109 = "Validation is Successfully"
+    AU110 = "Username is required"
+    AU111 = "Invalid email address"
+    AU112 = "Invalid password"
+    AU113 = "User already exists"
+    AU114 = "User registration successful"
+    AU115 = "Invalid role"
+    AU116 = "Email or username is required for login"
+    AU117 = "user does not exist"
+    AU118 = "Login successful"
+    AU119 = "Invalid credentials"
