@@ -1,5 +1,8 @@
 from datetime import datetime
+from idlelib import query
+
 import asyncpg
+from pip._internal import self_outdated_check
 
 
 class UserRepository:
@@ -60,4 +63,23 @@ class UserRepository:
         query = "DELETE FROM user WHERE id = $1"
         return await self.database_connection.execute(query, user_id)
 
+    async def get_user_for_login(self,data:str,is_email:bool=False,) -> dict | None:
 
+        condition_field = "email" if is_email else "user_name"
+        query = f"""SELECT
+            u.user_id,
+            u.user_name,
+            u.email,
+            u.auth_id,
+            u.role_id,
+            a.hash_password,
+            r.role
+        FROM "user" u
+        INNER JOIN auth a
+            ON u.auth_id = a.auth_id
+        INNER JOIN role r
+            ON u.role_id = r.role_id
+        WHERE u.{condition_field} = $1
+        LIMIT 1
+    """
+        return await self.database_connection.fetchrow(query,data)

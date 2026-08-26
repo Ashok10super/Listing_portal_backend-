@@ -21,3 +21,6 @@ class AuthErrorCode(enum.Enum):
     AU117 = "user does not exist"
     AU118 = "Login successful"
     AU119 = "Invalid credentials"
+    AU120 = "Logout successful"
+    AU121 = "Unauthorized"
+    AU122 = "Jwt token validated successfully"

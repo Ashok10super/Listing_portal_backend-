@@ -1,7 +1,11 @@
+import os
+from datetime import datetime, timezone ,timedelta
 import asyncpg
 import bcrypt
 import logging
 import dotenv
+import jwt
+from config import Role
 from error_codes.auth_error_code import AuthErrorCode
 from repository.auth_repository import AuthRepository
 from repository.user_repository import UserRepository
@@ -60,39 +64,52 @@ class AuthService:
         hashed_password = self.__get_hashed_password(password)
         return await self.auth_repositor.create_auth_record(hashed_password)
 
-    async def get_login(self,data:str,password:str)->dict:
+    async def get_login(self,data:str,password:str)-> dict:
         try:
             user = None #holds the user data
 
             if self.__data_is_email(data):
-                user = await self.user_repository.get_user_by_email(data)
+                user = await self.user_repository.get_user_for_login(data,is_email=True)
             else:
-                user = await self.user_repository.get_user_by_username(data)
+                user = await self.user_repository.get_user_for_login(data)
 
             if not user:
                 return self.__get_service_response(AuthErrorCode.AU117.name, AuthErrorCode.AU117.value)
 
-            auth_id = user.get("auth_id")
 
-            auth = await self.auth_repository.get_auth_by_auth_id(auth_id)
-
-            hashed_password = auth.get("hash_password")
+            hashed_password = user.get("hash_password")
 
             is_password_valid = self.__verfiy_password(password, hashed_password)
 
             if is_password_valid:
+                role = user.get("role")
+                cookie_expiry_time = self.__set_cookie_expiry_time_based_on_role(role)
+                jwt_token = self.__generate_jwt_token({"user_id": user.get("user_id"),"role":role})
                 return self.__get_service_response(
                     AuthErrorCode.AU118.name,
                     AuthErrorCode.AU118.value,
                     is_error=False,
-                    data=None)
+                    data=None,return_data={"cookie_expiry_time": cookie_expiry_time,"jwt_token":jwt_token})
             else:
                 return self.__get_service_response(AuthErrorCode.AU119.name, AuthErrorCode.AU119.value)
         except asyncpg.exceptions.PostgresError as e:
             logging.info(str(e))
             return self.__get_service_response(AuthErrorCode.AU107.name, AuthErrorCode.AU107.value)
 
+    def get_logout(self) -> dict:
+        return self.__get_service_response(AuthErrorCode.AU120.name, AuthErrorCode.AU120.value)
 
+    @staticmethod
+    def get_decoded_jwt_token(token: str):
+        try:
+            payload = jwt.decode(
+                token,
+                os.getenv("SECRET_KEY"),
+                algorithms=os.getenv("ALGORITHM"),
+            )
+            return AuthService.__get_service_response(AuthErrorCode.AU122.name, AuthErrorCode.AU122.value,is_error=False,data=None,return_data={"payload":payload})
+        except jwt.exceptions.PyJWTError as e:
+            return AuthService.__get_service_response(AuthErrorCode.AU107.name, AuthErrorCode.AU107.value)
     def __data_is_email(self,data)->bool:
         if "@" in data:
             return True
@@ -102,12 +119,29 @@ class AuthService:
     def __verfiy_password(self,password:str,hash_password:str)->bool:
         return bcrypt.checkpw(password.encode('utf-8'),hash_password.encode('utf-8'))
 
+    def __set_cookie_expiry_time_based_on_role(self, role: str):
+        expiry_hours = {
+            Role.SUPER_ADMIN.value: 2,
+            Role.ADMIN.value: 8,
+            Role.EXECUTIVE.value: 12,
+            Role.USER.value: 24,
+        }
+
+        hours = expiry_hours.get(role, 1)
+
+        return datetime.now(timezone.utc) + timedelta(
+            hours=hours
+        )
 
 
-    def __get_service_response(self, code: str, message: str, is_error: bool = True, data=None) -> dict:
+    def __generate_jwt_token(self,payload:dict)->str:
+        return jwt.encode(payload, algorithm=os.getenv("ALGORITHM"),key=os.getenv("SECRET_KEY"))
+    @staticmethod
+    def __get_service_response(code: str, message: str, is_error: bool = True, data=None,return_data:dict=None) -> dict:
         return {
             "is_error": is_error,
             "response": {"code": code, "message": message, "data": data},
+            "return_data": return_data,
         }
     def __get_hashed_password(self, password: str) -> str:
         return (bcrypt.hashpw(password.encode("utf-8"),bcrypt.gensalt())).decode("utf-8")

@@ -10,7 +10,6 @@ from service.auth_service import AuthService
 
 auth_router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
-
 @auth_router.post("/register")
 async def register_admin(request: Request)->JSONResponse:
 
@@ -72,8 +71,35 @@ async def login(request: Request)->JSONResponse:
             status_code = status.HTTP_400_BAD_REQUEST
         return JSONResponse(status_code=status_code, content={"data": service_response.get("response")})
 
-    return JSONResponse(status_code=status.HTTP_200_OK, content={"data": service_response.get("response")})
+    cookie_expiry_time = service_response.get("return_data").get("cookie_expiry_time")
+    jwt_token = service_response.get("return_data").get("jwt_token")
 
+
+    response = JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "data": service_response.get("response")
+        }
+    )
+
+    response.set_cookie(
+        key="access_token",
+        value=jwt_token,
+        expires=cookie_expiry_time,
+        httponly=False,
+        secure=False,
+        samesite="lax"
+    )
+
+    return response
+
+@auth_router.post("/logout")
+async def logout(request: Request)->JSONResponse:
+    auth_service = AuthService(user_repository=None,auth_repository=None,role_repository=None)
+    service_response = auth_service.get_logout()
+    response = JSONResponse(status_code=status.HTTP_200_OK,content={"data":service_response.get("response")})
+    response.delete_cookie(key="access_token")
+    return response
 
 
 

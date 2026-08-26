@@ -3,6 +3,7 @@ from fastapi import FastAPI
 import uvicorn
 from database import PostgresDatabase
 from controller.auth import auth_router
+from middleware.auth_middleware import auth_middleware
 
 @asynccontextmanager
 async def life_span(app: FastAPI):
@@ -15,7 +16,11 @@ async def life_span(app: FastAPI):
 
 app = FastAPI(lifespan=life_span)
 
-#Routers registration
+app.middleware("http")(auth_middleware)
+
+#middleware registration
+
+#Router registration
 app.include_router(auth_router)
 
 if __name__ == "__main__":
