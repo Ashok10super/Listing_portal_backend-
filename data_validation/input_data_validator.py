@@ -105,3 +105,4 @@ def __validate_password(password:str)-> dict[str, bool | dict[str, str | None]] 
             AuthErrorCode.AU107.value,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
