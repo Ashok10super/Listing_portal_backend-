@@ -4,6 +4,7 @@ import uvicorn
 from database import PostgresDatabase
 from controller.auth import auth_router
 from middleware.auth_middleware import auth_middleware
+from fastapi.middleware.cors import CORSMiddleware
 
 @asynccontextmanager
 async def life_span(app: FastAPI):
@@ -15,6 +16,19 @@ async def life_span(app: FastAPI):
     await database_object.close_database_connection()
 
 app = FastAPI(lifespan=life_span)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.middleware("http")(auth_middleware)
 

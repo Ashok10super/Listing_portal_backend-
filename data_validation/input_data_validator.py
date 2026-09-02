@@ -24,7 +24,7 @@ def validate_auth_input(body,required_fields:list,is_login:bool=False)-> dict[st
                     return _get_validation_response(AuthErrorCode.AU102.name, AuthErrorCode.AU102.value)
 
                 if dict_body[field] is None or dict_body[field] == "": #check for empty fields
-                    if field == "email":
+                    if field in ("email", "email_id"):
                         return _get_validation_response(AuthErrorCode.AU103.name, AuthErrorCode.AU103.value)
                     if field == "phone":
                         return _get_validation_response(AuthErrorCode.AU104.name, AuthErrorCode.AU104.value)

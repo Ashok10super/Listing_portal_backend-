@@ -23,12 +23,35 @@ async def register_admin(request: Request)->JSONResponse:
 
     user_repository = UserRepository(request.app.state.database_connection)
     role_repository = RoleRepository(request.app.state.database_connection)
+    auth_repository = AuthRepository(request.app.state.database_connection)
 
-    auth_service = AuthService(user_repository,role_repository,None)
+    auth_service = AuthService(user_repository=user_repository, role_repository=role_repository, auth_repository=auth_repository)
 
     data = validation_response.get("response").get("data")
+    target_role = str(data.get("role", "")).upper()
 
-    print("This is the input data",data)
+    # Restrict ADMIN creation to SUPER_ADMIN users only
+    if target_role == "ADMIN":
+        token = request.cookies.get("access_token")
+        if not token:
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"data": {"code": AuthErrorCode.AU121.name, "message": "Unauthorized: Only Super Admin can register Admin users", "data": None}}
+            )
+        token_res = AuthService.get_decoded_jwt_token(token)
+        if token_res.get("is_error"):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"data": {"code": AuthErrorCode.AU121.name, "message": "Unauthorized: Invalid or expired token", "data": None}}
+            )
+        payload = token_res.get("return_data", {}).get("payload", {})
+        if str(payload.get("role", "")).upper() != "SUPER_ADMIN":
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"data": {"code": AuthErrorCode.AU121.name, "message": "Unauthorized: Only Super Admin can register Admin users", "data": None}}
+            )
+
+    print("This is the input data", data)
 
     service_response = await auth_service.register_user(
         data.get("username"),
@@ -50,7 +73,7 @@ async def register_admin(request: Request)->JSONResponse:
 @auth_router.post("/login")
 async def login(request: Request)->JSONResponse:
     data = await request.body()
-    validation_response = validate_auth_input(data,["data","password"],is_login=True)
+    validation_response = validate_auth_input(data,["email_id","password"],is_login=True)
 
     if validation_response.get("is_error"):
         return JSONResponse(status_code=validation_response.get("status_code"),content={"data":validation_response.get("response")})
@@ -61,8 +84,9 @@ async def login(request: Request)->JSONResponse:
     auth_service = AuthService(user_repository=user_repository,auth_repository=auth_repository,role_repository=None)
 
     input_data =  validation_response.get("response").get("data")
+    login_identifier = input_data.get("email_id") or input_data.get("email") or input_data.get("data")
 
-    service_response = await auth_service.get_login(data=input_data.get("data"),password=input_data.get("password"))
+    service_response = await auth_service.get_login(data=login_identifier,password=input_data.get("password"))
 
 
     if service_response.get("is_error"):

@@ -62,7 +62,7 @@ class AuthService:
 
     async def __create_auth(self,password:str):
         hashed_password = self.__get_hashed_password(password)
-        return await self.auth_repositor.create_auth_record(hashed_password)
+        return await self.auth_repository.create_auth_record(hashed_password)
 
     async def get_login(self,data:str,password:str)-> dict:
         try:
