@@ -1,3 +1,4 @@
 from repository.user_repository import UserRepository
 from repository.auth_repository import AuthRepository
 from repository.role_respository import RoleRepository
+from repository.property_repository import PropertyRepository

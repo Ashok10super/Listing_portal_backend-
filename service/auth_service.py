@@ -85,11 +85,19 @@ class AuthService:
                 role = user.get("role")
                 cookie_expiry_time = self.__set_cookie_expiry_time_based_on_role(role)
                 jwt_token = self.__generate_jwt_token({"user_id": user.get("user_id"),"role":role})
+                user_data = {
+                    "user_id": user.get("user_id"),
+                    "username": user.get("user_name"),
+                    "email": user.get("email"),
+                    "phone": user.get("phone"),
+                    "role": user.get("role"),
+                }
                 return self.__get_service_response(
                     AuthErrorCode.AU118.name,
                     AuthErrorCode.AU118.value,
                     is_error=False,
-                    data=None,return_data={"cookie_expiry_time": cookie_expiry_time,"jwt_token":jwt_token})
+                    data=user_data,
+                    return_data={"cookie_expiry_time": cookie_expiry_time,"jwt_token":jwt_token})
             else:
                 return self.__get_service_response(AuthErrorCode.AU119.name, AuthErrorCode.AU119.value)
         except asyncpg.exceptions.PostgresError as e:

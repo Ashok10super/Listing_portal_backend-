@@ -70,6 +70,7 @@ class UserRepository:
             u.user_id,
             u.user_name,
             u.email,
+            u.phone,
             u.auth_id,
             u.role_id,
             a.hash_password,
