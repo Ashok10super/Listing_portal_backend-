@@ -12,3 +12,8 @@ class PropertyErrorCode(enum.Enum):
     PR108 = "Invalid query parameters"
     PR109 = "Internal Server Error"
     PR110 = "Liked properties fetched successfully"
+    PR111 = "Property approved successfully"
+    PR112 = "Property disapproved successfully"
+    PR113 = "Property updated successfully"
+    PR114 = "Property created successfully"
+    PR115 = "Unauthorized action on property"

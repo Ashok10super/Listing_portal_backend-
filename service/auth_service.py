@@ -91,6 +91,7 @@ class AuthService:
                     "email": user.get("email"),
                     "phone": user.get("phone"),
                     "role": user.get("role"),
+                    "token": jwt_token,
                 }
                 return self.__get_service_response(
                     AuthErrorCode.AU118.name,

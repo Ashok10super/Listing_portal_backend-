@@ -25,6 +25,10 @@ class PropertyService:
         max_price: Optional[float] = None,
         search: Optional[str] = None,
         is_approved: Optional[bool] = None,
+        approved_by: Optional[int] = None,
+        disapproved_by: Optional[int] = None,
+        approval_status: Optional[str] = None,
+        created_by: Optional[int] = None,
         liked_only: Optional[bool] = False,
         page: int = 1,
         limit: int = 10,
@@ -50,6 +54,10 @@ class PropertyService:
                 max_price=max_price,
                 search=search,
                 is_approved=is_approved,
+                approved_by=approved_by,
+                disapproved_by=disapproved_by,
+                approval_status=approval_status,
+                created_by=created_by,
                 liked_only=liked_only,
                 page=page,
                 limit=limit,
@@ -112,6 +120,91 @@ class PropertyService:
                 message=PropertyErrorCode.PR109.value,
             )
 
+    async def approve_property(self, property_id: int, admin_id: int) -> Dict[str, Any]:
+        try:
+            updated = await self.property_repository.approve_property(property_id=property_id, admin_id=admin_id)
+            if not updated:
+                return self.__get_service_response(
+                    code=PropertyErrorCode.PR103.name,
+                    message=PropertyErrorCode.PR103.value,
+                )
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR111.name,
+                message=PropertyErrorCode.PR111.value,
+                is_error=False,
+                data=updated,
+            )
+        except Exception as e:
+            logging.error(f"Error in approve_property: {e}")
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR109.name,
+                message=PropertyErrorCode.PR109.value,
+            )
+
+    async def disapprove_property(self, property_id: int, admin_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            updated = await self.property_repository.disapprove_property(
+                property_id=property_id, admin_id=admin_id, reason=reason
+            )
+            if not updated:
+                return self.__get_service_response(
+                    code=PropertyErrorCode.PR103.name,
+                    message=PropertyErrorCode.PR103.value,
+                )
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR112.name,
+                message=PropertyErrorCode.PR112.value,
+                is_error=False,
+                data=updated,
+            )
+        except Exception as e:
+            logging.error(f"Error in disapprove_property: {e}")
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR109.name,
+                message=PropertyErrorCode.PR109.value,
+            )
+
+    async def update_property(self, property_id: int, update_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+        try:
+            updated = await self.property_repository.update_property(
+                property_id=property_id, update_data=update_data, user_id=user_id
+            )
+            if not updated:
+                return self.__get_service_response(
+                    code=PropertyErrorCode.PR103.name,
+                    message=PropertyErrorCode.PR103.value,
+                )
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR113.name,
+                message=PropertyErrorCode.PR113.value,
+                is_error=False,
+                data=updated,
+            )
+        except Exception as e:
+            logging.error(f"Error in update_property: {e}")
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR109.name,
+                message=PropertyErrorCode.PR109.value,
+            )
+
+    async def create_property(self, property_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+        try:
+            created = await self.property_repository.create_property(
+                property_data=property_data, user_id=user_id
+            )
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR114.name,
+                message=PropertyErrorCode.PR114.value,
+                is_error=False,
+                data=created,
+            )
+        except Exception as e:
+            logging.error(f"Error in create_property: {e}")
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR109.name,
+                message=PropertyErrorCode.PR109.value,
+            )
+
     async def like_property(self, user_id: int, property_id: int) -> Dict[str, Any]:
         try:
             property_data = await self.property_repository.get_property_by_id(property_id=property_id)
@@ -121,7 +214,7 @@ class PropertyService:
                     message=PropertyErrorCode.PR103.value,
                 )
 
-            success = await self.property_repository.like_property(user_id=user_id, property_id=property_id)
+            await self.property_repository.like_property(user_id=user_id, property_id=property_id)
             return self.__get_service_response(
                 code=PropertyErrorCode.PR104.name,
                 message=PropertyErrorCode.PR104.value,
@@ -159,7 +252,6 @@ class PropertyService:
             if res.get("is_error"):
                 return res
             
-            # Override response code and message for liked properties endpoint
             res["response"]["code"] = PropertyErrorCode.PR110.name
             res["response"]["message"] = PropertyErrorCode.PR110.value
             return res
@@ -169,6 +261,23 @@ class PropertyService:
                 code=PropertyErrorCode.PR109.name,
                 message=PropertyErrorCode.PR109.value,
             )
+
+    async def get_property_metrics(self, admin_user_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            metrics = await self.property_repository.get_property_metrics(admin_user_id=admin_user_id)
+            return self.__get_service_response(
+                code="PR100",
+                message="Property metrics retrieved successfully",
+                is_error=False,
+                data=metrics,
+            )
+        except Exception as e:
+            logging.error(f"Error in get_property_metrics: {e}")
+            return self.__get_service_response(
+                code=PropertyErrorCode.PR109.name,
+                message=PropertyErrorCode.PR109.value,
+            )
+
 
     @staticmethod
     def __get_service_response(

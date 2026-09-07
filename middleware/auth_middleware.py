@@ -21,6 +21,8 @@ async def auth_middleware(request: Request, call_next):
     always_public_routes = [
         r"^/v1/auth/login$",
         r"^/v1/auth/register$",
+        r"^/login$",
+        r"^/register$",
     ]
     is_always_public = any(re.match(pattern, path) for pattern in always_public_routes)
 
@@ -28,13 +30,20 @@ async def auth_middleware(request: Request, call_next):
     is_public_property_get = (
         method == "GET" and (
             re.match(r"^/v1/properties/?$", path) or
-            re.match(r"^/v1/properties/\d+$", path)
+            re.match(r"^/v1/properties/\d+$", path) or
+            re.match(r"^/v1/properties/(metrics|stats|summary)$", path)
         )
     )
 
     is_public = is_always_public or is_public_property_get
 
-    token = request.cookies.get("access_token")
+    # Extract token from Authorization Bearer header or access_token cookie
+    token = None
+    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        token = request.cookies.get("access_token")
 
     if token:
         service_response = AuthService.get_decoded_jwt_token(token)

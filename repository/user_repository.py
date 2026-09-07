@@ -41,26 +41,33 @@ class UserRepository:
 
     async def get_user_by_id(self, user_id: int) -> dict | None:
         query = """
-            SELECT user_id, user_name, email, role
-            FROM user
-            WHERE user_id = $1
+            SELECT u.user_id, u.user_name, u.email, r.role
+            FROM "user" u
+            INNER JOIN role r ON u.role_id = r.role_id
+            WHERE u.user_id = $1
             LIMIT 1
         """
         user = await self.database_connection.fetchrow(query, user_id)
         return dict(user) if user else None
 
-    async def update_password(self, user_id: int, password: str) -> dict | None:
+    async def get_all_users(self) -> list[dict]:
         query = """
-            UPDATE user
-            SET password = $1
-            WHERE id = $2
-            RETURNING id, user_name, email, role_id
+            SELECT
+                u.user_id,
+                u.user_name,
+                u.email,
+                u.phone,
+                r.role,
+                u.created_at
+            FROM "user" u
+            INNER JOIN role r ON u.role_id = r.role_id
+            ORDER BY u.user_id ASC
         """
-        user = await self.database_connection.fetchrow(query, password, user_id)
-        return dict(user) if user else None
+        rows = await self.database_connection.fetch(query)
+        return [dict(r) for r in rows]
 
     async def delete_user(self, user_id: int) -> str:
-        query = "DELETE FROM user WHERE id = $1"
+        query = 'DELETE FROM "user" WHERE user_id = $1'
         return await self.database_connection.execute(query, user_id)
 
     async def get_user_for_login(self,data:str,is_email:bool=False,) -> dict | None:

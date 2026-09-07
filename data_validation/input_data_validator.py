@@ -11,47 +11,61 @@ def _get_validation_response(code:str,message:str,is_error:bool=True,status_code
     return {"is_error":is_error,"status_code":status_code,"response":{"code":code,"message":message,"data":data}}
 
 
-def validate_auth_input(body,required_fields:list,is_login:bool=False)-> dict[str, bool | dict[str, str | None]] | None:
+def validate_auth_input(body, required_fields: list, is_login: bool = False) -> dict[str, bool | dict[str, str | None]] | None:
     try:
         dict_body = json.loads(body)
     except json.decoder.JSONDecodeError:
-        return _get_validation_response(AuthErrorCode.AU101.name,AuthErrorCode.AU101.value)
+        return _get_validation_response(AuthErrorCode.AU101.name, AuthErrorCode.AU101.value)
 
-    if dict_body:
-        try:
-            for field in required_fields: #checks for the required fields
-                if field not in dict_body:
-                    return _get_validation_response(AuthErrorCode.AU102.name, AuthErrorCode.AU102.value)
+    if not dict_body:
+        return _get_validation_response(AuthErrorCode.AU108.name, AuthErrorCode.AU108.value, status_code=status.HTTP_400_BAD_REQUEST)
 
-                if dict_body[field] is None or dict_body[field] == "": #check for empty fields
-                    if field in ("email", "email_id"):
-                        return _get_validation_response(AuthErrorCode.AU103.name, AuthErrorCode.AU103.value)
-                    if field == "phone":
-                        return _get_validation_response(AuthErrorCode.AU104.name, AuthErrorCode.AU104.value)
-                    if field == "username":
-                        return _get_validation_response(AuthErrorCode.AU110.name, AuthErrorCode.AU110.value)
-                    if field == "role":
-                        return _get_validation_response(AuthErrorCode.AU105.name, AuthErrorCode.AU105.value)
-                    if field == "password":
-                        return _get_validation_response(AuthErrorCode.AU106.name, AuthErrorCode.AU106.value)
-                    if field == "data":
-                        return _get_validation_response(AuthErrorCode.AU116.name, AuthErrorCode.AU116.value)
-                if not is_login:
-                    if field == "email":
-                        email_validation_response = __validate_email(dict_body[field])
-                        if email_validation_response:
-                            return email_validation_response
-                    if field == "password":
-                        password_validation_response = __validate_password(dict_body[field])
-                        if password_validation_response:
-                            return password_validation_response
+    try:
+        if is_login:
+            identifier = dict_body.get("email_id") or dict_body.get("email") or dict_body.get("username") or dict_body.get("data")
+            if not identifier:
+                return _get_validation_response(AuthErrorCode.AU116.name, AuthErrorCode.AU116.value)
+            
+            password = dict_body.get("password")
+            if not password:
+                return _get_validation_response(AuthErrorCode.AU106.name, AuthErrorCode.AU106.value)
 
-            return _get_validation_response(AuthErrorCode.AU109.name, AuthErrorCode.AU109.value,is_error=False,status_code=status.HTTP_200_OK,data=dict_body)
+            # Normalize identifier into dict_body for controller
+            dict_body["email_id"] = identifier
+            dict_body["data"] = identifier
+            return _get_validation_response(AuthErrorCode.AU109.name, AuthErrorCode.AU109.value, is_error=False, status_code=status.HTTP_200_OK, data=dict_body)
 
-        except Exception as e:
-            return _get_validation_response(AuthErrorCode.AU107.name, AuthErrorCode.AU107.value,status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    else:
-        return _get_validation_response(AuthErrorCode.AU108.name, AuthErrorCode.AU108.value,status_code=status.HTTP_400_BAD_REQUEST)
+        # Registration validation
+        if not dict_body.get("role"):
+            dict_body["role"] = "USER"
+
+        for field in required_fields:
+            if field not in dict_body or dict_body[field] is None or dict_body[field] == "":
+                if field in ("email", "email_id"):
+                    return _get_validation_response(AuthErrorCode.AU103.name, AuthErrorCode.AU103.value)
+                if field == "phone":
+                    return _get_validation_response(AuthErrorCode.AU104.name, AuthErrorCode.AU104.value)
+                if field == "username":
+                    return _get_validation_response(AuthErrorCode.AU110.name, AuthErrorCode.AU110.value)
+                if field == "role":
+                    return _get_validation_response(AuthErrorCode.AU105.name, AuthErrorCode.AU105.value)
+                if field == "password":
+                    return _get_validation_response(AuthErrorCode.AU106.name, AuthErrorCode.AU106.value)
+                return _get_validation_response(AuthErrorCode.AU102.name, AuthErrorCode.AU102.value)
+
+            if field == "email":
+                email_validation_response = __validate_email(dict_body[field])
+                if email_validation_response:
+                    return email_validation_response
+            if field == "password":
+                password_validation_response = __validate_password(dict_body[field])
+                if password_validation_response:
+                    return password_validation_response
+
+        return _get_validation_response(AuthErrorCode.AU109.name, AuthErrorCode.AU109.value, is_error=False, status_code=status.HTTP_200_OK, data=dict_body)
+
+    except Exception as e:
+        return _get_validation_response(AuthErrorCode.AU107.name, AuthErrorCode.AU107.value, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 def __validate_email(email:str)-> dict[str, bool | dict[str, str | None]] | None:
