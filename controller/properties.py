@@ -7,7 +7,7 @@ from service.property_service import PropertyService
 from error_codes.property_error_code import PropertyErrorCode
 from error_codes.auth_error_code import AuthErrorCode
 
-properties_router = APIRouter(prefix="/v1/properties", tags=["properties"])
+properties_router = APIRouter(tags=["properties"])
 
 
 def _get_property_service(request: Request) -> PropertyService:
@@ -16,8 +16,10 @@ def _get_property_service(request: Request) -> PropertyService:
     return PropertyService(property_repo)
 
 
-@properties_router.get("")
-@properties_router.get("/")
+@properties_router.get("/v1/properties")
+@properties_router.get("/v1/properties/")
+@properties_router.get("/properties")
+@properties_router.get("/properties/")
 async def get_properties(
     request: Request,
     state: Optional[str] = Query(None, description="State name or state_id (comma-separated for multiple)"),
@@ -47,8 +49,38 @@ async def get_properties(
     role = getattr(request.state, "role", None)
     normalized_role = str(role).upper() if role else None
 
-    # Normal users (or public unauthenticated users) can ONLY see approved properties
-    if normalized_role not in ("ADMIN", "SUPER_ADMIN"):
+    # Check query param flags (presence in query_params handles both `?flag` and `?flag=true`)
+    query_keys = set(request.query_params.keys())
+    has_approved_properties = "approved_properties" in query_keys
+    has_unapproved_properties = "unapproved_properties" in query_keys
+    has_approved_by_me = "approved_by_me" in query_keys
+    has_disapproved_by_me = "disapproved_by_me" in query_keys
+
+    if has_approved_properties:
+        # /properties?approved_properties -> this is for users view (only approved)
+        is_approved = True
+        approval_status = "approved"
+        approved_by = None
+        disapproved_by = None
+    elif has_unapproved_properties:
+        # /properties?unapproved_properties -> for admin & super_admin view: next 10 unapproved properties
+        is_approved = False
+        approval_status = "pending"
+        approved_by = None
+        disapproved_by = None
+    elif has_approved_by_me:
+        # /properties?approved_by_me -> all approved which is approved by caller's id
+        is_approved = True
+        approval_status = "approved"
+        approved_by = user_id
+        disapproved_by = None
+    elif has_disapproved_by_me:
+        # /properties?disapproved_by_me -> all disapproved which is disapproved by caller's id
+        approval_status = "disapproved"
+        disapproved_by = user_id
+        approved_by = None
+    elif normalized_role not in ("ADMIN", "SUPER_ADMIN"):
+        # Normal users (or public unauthenticated users) can ONLY see approved properties
         is_approved = True
         approval_status = "approved"
         approved_by = None
@@ -71,6 +103,10 @@ async def get_properties(
             is_approved = False
             approval_status = "pending"
             approved_by = None
+        elif tab == "all":
+            # All properties (both approved and unapproved/disapproved)
+            is_approved = None
+            approval_status = None
     elif normalized_role == "SUPER_ADMIN":
         # Super Admin can see everything, or filter by requested tab
         if tab in ("unapproved", "pending"):
@@ -81,6 +117,10 @@ async def get_properties(
             approval_status = "approved"
         elif tab in ("disapproved",):
             approval_status = "disapproved"
+        elif not tab or tab == "all":
+            # Super Admin: /properties returns all properties (who approved/disapproved is included in each row)
+            is_approved = None
+            approval_status = None
 
     service = _get_property_service(request)
     is_liked_filter = liked or liked_only
@@ -126,7 +166,8 @@ async def get_properties(
     )
 
 
-@properties_router.get("/liked")
+@properties_router.get("/v1/properties/liked")
+@properties_router.get("/properties/liked")
 async def get_liked_properties(
     request: Request,
     page: int = Query(1, ge=1),
@@ -154,9 +195,12 @@ async def get_liked_properties(
     )
 
 
-@properties_router.get("/metrics")
-@properties_router.get("/stats")
-@properties_router.get("/summary")
+@properties_router.get("/v1/properties/metrics")
+@properties_router.get("/properties/metrics")
+@properties_router.get("/v1/properties/stats")
+@properties_router.get("/properties/stats")
+@properties_router.get("/v1/properties/summary")
+@properties_router.get("/properties/summary")
 async def get_property_metrics(request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     role = getattr(request.state, "role", None)
@@ -177,11 +221,53 @@ async def get_property_metrics(request: Request) -> JSONResponse:
     )
 
 
-@properties_router.get("/{property_id}")
-async def get_property_by_id(property_id: int, request: Request) -> JSONResponse:
+@properties_router.get("/v1/properties/{property_id}")
+@properties_router.get("/properties/{property_id}")
+async def get_property_by_id(
+    property_id: str,
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+) -> JSONResponse:
+    query_keys = set(request.query_params.keys())
+    has_approved_by_me = "approved_by_me" in query_keys
+    has_disapproved_by_me = "disapproved_by_me" in query_keys
+
+    # Support /properties/{owner_id}?approved_by_me and /properties/{owner_id}?disapproved_by_me
+    # and /properties/owner_id?approved_by_me
+    if has_approved_by_me or has_disapproved_by_me:
+        auth_user_id = getattr(request.state, "user_id", None)
+        if property_id.isdigit():
+            target_owner_id = int(property_id)
+        else:
+            target_owner_id = auth_user_id
+
+        service = _get_property_service(request)
+        approval_status = "approved" if has_approved_by_me else "disapproved"
+        approved_by = target_owner_id if has_approved_by_me else None
+        disapproved_by = target_owner_id if has_disapproved_by_me else None
+
+        service_response = await service.get_properties_list(
+            user_id=target_owner_id,
+            approval_status=approval_status,
+            is_approved=True if has_approved_by_me else None,
+            approved_by=approved_by,
+            disapproved_by=disapproved_by,
+            page=page,
+            limit=limit,
+        )
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"data": service_response.get("response")})
+
+    if not property_id.isdigit():
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"data": {"code": PropertyErrorCode.PR103.name, "message": PropertyErrorCode.PR103.value, "data": None}},
+        )
+
+    numeric_property_id = int(property_id)
     user_id = getattr(request.state, "user_id", None)
     service = _get_property_service(request)
-    service_response = await service.get_property_detail(property_id=property_id, user_id=user_id)
+    service_response = await service.get_property_detail(property_id=numeric_property_id, user_id=user_id)
 
     if service_response.get("is_error"):
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -198,7 +284,8 @@ async def get_property_by_id(property_id: int, request: Request) -> JSONResponse
     )
 
 
-@properties_router.post("/{property_id}/approve")
+@properties_router.post("/v1/properties/{property_id}/approve")
+@properties_router.post("/properties/{property_id}/approve")
 async def approve_property(property_id: int, request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     role = getattr(request.state, "role", None)
@@ -222,7 +309,8 @@ async def approve_property(property_id: int, request: Request) -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_200_OK, content={"data": service_response.get("response")})
 
 
-@properties_router.post("/{property_id}/disapprove")
+@properties_router.post("/v1/properties/{property_id}/disapprove")
+@properties_router.post("/properties/{property_id}/disapprove")
 async def disapprove_property(property_id: int, request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     role = getattr(request.state, "role", None)
@@ -255,8 +343,10 @@ async def disapprove_property(property_id: int, request: Request) -> JSONRespons
     return JSONResponse(status_code=status.HTTP_200_OK, content={"data": service_response.get("response")})
 
 
-@properties_router.put("/{property_id}")
-@properties_router.patch("/{property_id}")
+@properties_router.put("/v1/properties/{property_id}")
+@properties_router.put("/properties/{property_id}")
+@properties_router.patch("/v1/properties/{property_id}")
+@properties_router.patch("/properties/{property_id}")
 async def update_property(property_id: int, request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     role = getattr(request.state, "role", None)
@@ -289,8 +379,10 @@ async def update_property(property_id: int, request: Request) -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_200_OK, content={"data": service_response.get("response")})
 
 
-@properties_router.post("")
-@properties_router.post("/")
+@properties_router.post("/v1/properties")
+@properties_router.post("/v1/properties/")
+@properties_router.post("/properties")
+@properties_router.post("/properties/")
 async def create_property(request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     role = getattr(request.state, "role", None)
@@ -320,7 +412,8 @@ async def create_property(request: Request) -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_201_CREATED, content={"data": service_response.get("response")})
 
 
-@properties_router.post("/{property_id}/like")
+@properties_router.post("/v1/properties/{property_id}/like")
+@properties_router.post("/properties/{property_id}/like")
 async def like_property(property_id: int, request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
@@ -347,7 +440,8 @@ async def like_property(property_id: int, request: Request) -> JSONResponse:
     )
 
 
-@properties_router.delete("/{property_id}/like")
+@properties_router.delete("/v1/properties/{property_id}/like")
+@properties_router.delete("/properties/{property_id}/like")
 async def unlike_property(property_id: int, request: Request) -> JSONResponse:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:

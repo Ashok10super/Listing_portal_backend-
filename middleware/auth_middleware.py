@@ -29,9 +29,9 @@ async def auth_middleware(request: Request, call_next):
     # Public property GET routes (excluding /liked and /{id}/like)
     is_public_property_get = (
         method == "GET" and (
-            re.match(r"^/v1/properties/?$", path) or
-            re.match(r"^/v1/properties/\d+$", path) or
-            re.match(r"^/v1/properties/(metrics|stats|summary)$", path)
+            re.match(r"^/(v1/)?properties/?$", path) or
+            re.match(r"^/(v1/)?properties/(owner_id|\d+)$", path) or
+            re.match(r"^/(v1/)?properties/(metrics|stats|summary)$", path)
         )
     )
 

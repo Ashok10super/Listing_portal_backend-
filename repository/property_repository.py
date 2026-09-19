@@ -162,7 +162,7 @@ class PropertyRepository:
             param_idx += 1
 
         if disapproved_by is not None:
-            where_conditions.append(f"(p.disapproved_by = ${param_idx} OR p.approved_by = ${param_idx})")
+            where_conditions.append(f"p.disapproved_by = ${param_idx}")
             where_params.append(disapproved_by)
             param_idx += 1
 
@@ -541,7 +541,7 @@ class PropertyRepository:
                 is_approved, approval_status, created_by, modified_by,
                 created_at, updated_at
             ) VALUES (
-                $1, 1, $2, $3, 1, 1, 1, $4, $5, $6, $7, $8, $9, $10,
+                $1, NULL, $2, $3, 31, 577, 2458, $4, $5, $6, $7, $8, $9, $10,
                 FALSE, 'pending', $11, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             ) RETURNING property_id
         """
