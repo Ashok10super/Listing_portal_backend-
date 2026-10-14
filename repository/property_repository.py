@@ -1,5 +1,5 @@
 import asyncpg
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from typing import Optional, List, Dict, Any, Tuple
 import json
@@ -30,7 +30,7 @@ def _serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class PropertyRepository:
-    def __init__(self, database_connection: asyncpg.Pool):
+    def __init__(self, database_connection: asyncpg.Connection):
         self.database_connection = database_connection
 
     async def get_properties(
@@ -500,96 +500,154 @@ class PropertyRepository:
         return await self.get_property_by_id(property_id, user_id=user_id)
 
     async def create_property(self, property_data: Dict[str, Any], user_id: int) -> Optional[Dict[str, Any]]:
-        # 1. Insert auction_details record
-        auction_query = """
-            INSERT INTO auction_details (
-                auction_start_date, auction_end_date, auction_verified_on,
-                auction_branch, checker_name, checker_designation,
-                emd_amount, emd_start_date, emd_end_date,
-                reserve_price, increment_price, inspector_name,
-                inspector_mobile_no, inspector_branch, auction_type
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-            ) RETURNING auction_id
-        """
-        auction_id = await self.database_connection.fetchval(
-            auction_query,
-            datetime.now(),
-            datetime.now(),
-            datetime.now(),
-            property_data.get("branch") or "Main Branch",
-            property_data.get("authorizedOfficer") or "Authorized Officer",
-            "Chief Manager",
-            float(property_data.get("emdAmount") or 250000),
-            datetime.now(),
-            datetime.now(),
-            int(property_data.get("reservePrice") or 2500000),
-            int(property_data.get("increment_price") or 50000),
-            property_data.get("authorizedOfficer") or "Authorized Officer",
-            property_data.get("contactNumber") or "9876543210",
-            property_data.get("branch") or "Main Branch",
-            "E-Auction"
-        )
+        async with self.database_connection.acquire() as conn:
+            async with conn.transaction():
 
-        # 2. Insert into properties
-        prop_query = """
-            INSERT INTO properties (
-                auction_id, bank_id, property_unique_id, property_pincode,
-                state_id, district_id, city_id, locality, property_address,
-                property_possession_type, property_type, property_sub_type,
-                property_carpet_area_sqft, property_build_up_area_sqft,
-                is_approved, approval_status, created_by, modified_by,
-                created_at, updated_at
-            ) VALUES (
-                $1, NULL, $2, $3, 31, 577, 2458, $4, $5, $6, $7, $8, $9, $10,
-                FALSE, 'pending', $11, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            ) RETURNING property_id
-        """
-        unique_id = property_data.get("lotNumber") or f"LOT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        prop_id = await self.database_connection.fetchval(
-            prop_query,
-            auction_id,
-            unique_id,
-            property_data.get("pincode") or "600001",
-            property_data.get("locality") or property_data.get("city") or "Prime Area",
-            property_data.get("address") or property_data.get("title") or "Property Address",
-            property_data.get("possessionStatus") or "Physical Possession",
-            property_data.get("type") or "Residential",
-            property_data.get("sub_type") or "Flat",
-            float(property_data.get("areaSqFt") or 1200),
-            float(property_data.get("areaSqFt") or 1200),
-            user_id
-        )
+                # 1. Insert auction details
+                auction_query = """
+                    INSERT INTO auction_details (
+                        auction_id,
+                        auction_start_date,
+                        auction_end_date,
+                        auction_verified_on,
+                        auction_branch,
+                        checker_name,
+                        checker_designation,
+                        emd_amount,
+                        emd_start_date,
+                        emd_end_date,
+                        reserve_price,
+                        increment_price,
+                        inspector_name,
+                        inspector_mobile_no,
+                        inspector_branch,
+                        auction_type,
+                        created_at
+                    )
+                    VALUES (
+                        $1, $2, $3, $4, $5,
+                        $6, $7, $8, $9, $10,
+                        $11, $12, $13, $14, $15,
+                        $16, $17
+                    )
+                    RETURNING auction_id
+                """
 
-        # 3. Add bank_details
-        if property_data.get("bank"):
-            bank_query = """
-                INSERT INTO bank_details (
-                    property_id, bank_name, branch_name, borrower_name,
-                    borrower_address, is_loan_available, percentage_of_loan,
-                    created_at, updated_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5, TRUE, '80%', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                auction_id = await conn.fetchval(
+                    auction_query,
+                    property_data.get("auction_id"),
+                    property_data.get("auction_start_date") or None,
+                    property_data.get("auction_end_date") or None,
+                    property_data.get("auction_verified_on") or None,
+                    property_data.get("auction_branch") or None,
+                    property_data.get("checker_name") or None,
+                    property_data.get("checker_designation") or None,
+                    property_data.get("emd_amount") or None,
+                    property_data.get("emd_start_date") or None,
+                    property_data.get("emd_end_date") or None,
+                    property_data.get("reserve_price") or None,
+                    property_data.get("increment_price") or None,
+                    property_data.get("inspector_name") or "Authorized Officer",
+                    property_data.get("inspector_mobile_no") or None,
+                    property_data.get("inspector_branch") or None,
+                    property_data.get("auction_type") or "E-Auction",
+                    datetime.now(timezone.utc),
                 )
-            """
-            await self.database_connection.execute(
-                bank_query,
-                prop_id,
-                property_data.get("bank"),
-                property_data.get("branch") or "Main Branch",
-                "Borrower Entity",
-                property_data.get("address") or ""
-            )
 
-        # 4. Add image URL if given
-        if property_data.get("imageUrl"):
-            media_query = """
-                INSERT INTO property_media_link (property_id, media_url)
-                VALUES ($1, $2)
-            """
-            await self.database_connection.execute(media_query, prop_id, property_data.get("imageUrl"))
+                # 2. Insert property details
+                unique_id = (
+                        property_data.get("property_unique_id")
+                )
 
-        return await self.get_property_by_id(prop_id, user_id=user_id)
+                prop_query = """
+                    INSERT INTO properties (
+                        property_id,
+                        auction_id,
+                        bank_id,
+                        property_unique_id,
+                        property_pincode,
+                        state_id,
+                        district_id,
+                        city_id,
+                        locality,
+                        property_address,
+                        property_possession_type,
+                        property_type,
+                        property_sub_type,
+                        property_carpet_area_sqft,
+                        property_build_up_area_sqft,
+                        is_approved,
+                        approval_status,
+                        created_by,
+                        modified_by,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1, $2, $3, $4, $5, $6,
+                        $7, $8, $9, $10, $11, $12,
+                        $13, $14, $15, FALSE, 'pending',
+                        $16, $16, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    RETURNING property_id
+                """
+
+                prop_id = await conn.fetchval(
+                    prop_query,
+                    property_data.get("property_id"),
+                    auction_id,
+                    property_data.get("bank_id"),
+                    unique_id,
+                    property_data.get("property_pincode"),
+                    property_data.get("state_id"),
+                    property_data.get("district_id"),
+                    property_data.get("city_id"),
+                    property_data.get("locality") or None,
+                    property_data.get("property_address") or "Property Address",
+                    property_data.get("property_possession_type") or "Possession",
+                    property_data.get("property_type"),
+                    property_data.get("property_sub_type"),
+                    property_data.get("property_carpet_area_sqft"),
+                    property_data.get("property_build_up_area_sqft"),
+                    user_id,
+                )
+
+                # 3. Insert bank details, resolving the bank foreign key
+
+                bank_query = """
+                    INSERT INTO bank_details (
+                        property_id,
+                        bank_id,
+                        branch_name,
+                        borrower_name,
+                        borrower_address,
+                        is_loan_available,
+                        percentage_of_loan,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1, $2, $3, $4, $5,
+                        $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """
+
+                await conn.execute(
+                    bank_query,
+                    prop_id,
+                    property_data.get("bank_id"),
+                    property_data.get("branch_name"),
+                    property_data.get("borrower_name"),
+                    property_data.get("borrower_address"),
+                    property_data.get("is_loan_available"),
+                    property_data.get("percentage_of_loan"),
+                )
+
+        # Transaction commits successfully before returning the property
+        return await self.get_property_by_id(
+            prop_id,
+            user_id=user_id,
+        )
 
     async def is_property_liked(self, user_id: int, property_id: int) -> bool:
         query = "SELECT 1 FROM liked_properties WHERE user_id = $1 AND property_id = $2 LIMIT 1"

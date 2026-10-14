@@ -31,11 +31,15 @@ async def auth_middleware(request: Request, call_next):
         method == "GET" and (
             re.match(r"^/(v1/)?properties/?$", path) or
             re.match(r"^/(v1/)?properties/(owner_id|\d+)$", path) or
-            re.match(r"^/(v1/)?properties/(metrics|stats|summary)$", path)
-        )
+            re.match(r"^/(v1/)?properties/(metrics|stats|summary)$", path) or
+            re.match(r"^/(v1/)?properties/filter-lookup/[^/]+$", path))
     )
 
     is_public = is_always_public or is_public_property_get
+
+    if is_public:
+        return await call_next(request)
+
 
     # Extract token from Authorization Bearer header or access_token cookie
     token = None
@@ -52,8 +56,6 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_id = decoded_jwt_token.get("user_id")
             request.state.role = decoded_jwt_token.get("role")
 
-    if is_public:
-        return await call_next(request)
 
     # Protected routes require valid token
     if not token or not request.state.user_id:

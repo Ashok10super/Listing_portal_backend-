@@ -2,8 +2,11 @@ import math
 import logging
 import asyncpg
 from typing import Optional, Dict, Any
+from config import AvailableFilterLookups
 from error_codes.property_error_code import PropertyErrorCode
+from error_codes.search_filter_error_code import FilterLookupErrorCodes
 from repository.property_repository import PropertyRepository
+from repository.search_filter_repository import SearchFilterRepository
 
 
 class PropertyService:
@@ -192,11 +195,13 @@ class PropertyService:
             created = await self.property_repository.create_property(
                 property_data=property_data, user_id=user_id
             )
+            #serialize id's
+            serialized_property  = self.__serialize_ids(created)
             return self.__get_service_response(
                 code=PropertyErrorCode.PR114.name,
                 message=PropertyErrorCode.PR114.value,
                 is_error=False,
-                data=created,
+                data=serialized_property,
             )
         except Exception as e:
             logging.error(f"Error in create_property: {e}")
@@ -288,3 +293,72 @@ class PropertyService:
             "response": {"code": code, "message": message, "data": data},
             "return_data": return_data,
         }
+    @staticmethod
+    def __serialize_ids(property_dict):
+        for key, value in property_dict.items():
+            if isinstance(value,int):
+                property_dict[key] = str(value)
+        return property_dict
+
+
+class SearchFiltersService:
+    def __init__(self, search_filter_repository:SearchFilterRepository):
+        self.search_filter_repository = search_filter_repository
+
+    async def get_search_filters(self,request,search_header,query_parameter:int=None) -> Dict[str, Any]:
+        try:
+
+            #check if the search header is available in the lookup filters enum or not
+            if search_header not in {item.value for item in AvailableFilterLookups}:
+                return self.__filter_service_response(code=FilterLookupErrorCodes.SF101.name,message=FilterLookupErrorCodes.SF101.value)
+
+            #if available query the database according  to the search filter header
+            filter_data = None #holds the final search filter data
+
+            if search_header == AvailableFilterLookups.bank_name.value:
+               filter_data =  self.__serialize_dicts(await self.search_filter_repository.get_all_banks_filter())
+            elif search_header == AvailableFilterLookups.state.value:
+                filter_data = self.search_filter_repository.get_all_state_filter()
+            elif search_header == AvailableFilterLookups.district.value:
+                filter_data = self.__serialize_dicts(await self.search_filter_repository.get_all_district_filter_by_state_id(state_id=query_parameter))
+            elif search_header == AvailableFilterLookups.city.value:
+                filter_data = self.__serialize_dicts(await self.search_filter_repository.get_all_cities_filter_by_district(district_id=query_parameter))
+            elif search_header == AvailableFilterLookups.property_type.value:
+                filter_data = await self.search_filter_repository.get_all_property_type_filter()
+            elif search_header == AvailableFilterLookups.property_sub_type.value:
+                filter_data = await self.search_filter_repository.get_all_property_sub_type_filters()
+            elif search_header == AvailableFilterLookups.emd.value:
+                filter_data = await self.search_filter_repository.get_emd_filter_value_range()
+            elif search_header == AvailableFilterLookups.reserve_price.value:
+                filter_data = await self.search_filter_repository.get_reserve_price_filter_value_range()
+
+
+            if filter_data:
+                 return self.__filter_service_response(code=FilterLookupErrorCodes.SF103.name, message=FilterLookupErrorCodes.SF103.value, is_error=False,data=filter_data)
+
+            return self.__filter_service_response(code=FilterLookupErrorCodes.SF102.name,
+                                           message=FilterLookupErrorCodes.SF102.value)
+
+        except Exception as e:
+            logging.error(f"Error in get_search_filters: {e}")
+            return self.__filter_service_response(code=FilterLookupErrorCodes.SF104.name, message=FilterLookupErrorCodes.SF104.value)
+
+
+    @staticmethod
+    def __filter_service_response(
+        code: str, message: str, is_error: bool = True, data: Any = None, return_data: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        return {
+            "is_error": is_error,
+            "response": {"code": code, "message": message, "data": data},
+            "return_data": return_data,
+        }
+
+
+    @staticmethod
+    def __serialize_dicts(list_dicts):
+        for data in list_dicts:
+            for key, value in data.items():
+                data[key] = str(value)
+        return list_dicts
+

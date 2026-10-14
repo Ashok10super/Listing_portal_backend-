@@ -17,3 +17,10 @@ class PropertyErrorCode(enum.Enum):
     PR113 = "Property updated successfully"
     PR114 = "Property created successfully"
     PR115 = "Unauthorized action on property"
+    PR116 = "Invalid json body"
+    PR117 = "Payload not found"
+    PR118 = "Mandatory field missing"
+    PR119 = "Validation successful"
+    PR120 = "Internal Server Error"
+    PR121 = "Id fetched successfully"
+    PR122 = 'Id updated successfully'

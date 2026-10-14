@@ -1,11 +1,18 @@
 import json
-from typing import Optional, Dict, Any
+from typing import Optional
 from fastapi import APIRouter, Request, Query, status
 from starlette.responses import JSONResponse
+from data_validation.input_data_validator import property_input_validator,validate_identity_generator_input
 from repository.property_repository import PropertyRepository
-from service.property_service import PropertyService
+from repository.generated_identity_repository import GeneratedIdentityRepository
+from repository.search_filter_repository import SearchFilterRepository
+from service.property_service import PropertyService,SearchFiltersService
+from service.genearted_identity_service import GeneratedIdentityService
 from error_codes.property_error_code import PropertyErrorCode
 from error_codes.auth_error_code import AuthErrorCode
+from config import IdentityGenerationModules
+import logging
+logging.basicConfig(level=logging.INFO)
 
 properties_router = APIRouter(tags=["properties"])
 
@@ -15,11 +22,17 @@ def _get_property_service(request: Request) -> PropertyService:
     property_repo = PropertyRepository(db_connection)
     return PropertyService(property_repo)
 
+def _get_search_filter_service(request:Request) ->SearchFiltersService:
+    db_connection = request.app.state.database_connection
+    search_filter_repo = SearchFilterRepository(db_connection)
+    return SearchFiltersService(search_filter_repo)
+
+def _get_generated_identity_service(request:Request)->GeneratedIdentityService:
+    db_connection = request.app.state.database_connection
+    generated_identity_repo = GeneratedIdentityRepository(db_connection)
+    return GeneratedIdentityService(generated_identity_repo)
 
 @properties_router.get("/v1/properties")
-@properties_router.get("/v1/properties/")
-@properties_router.get("/properties")
-@properties_router.get("/properties/")
 async def get_properties(
     request: Request,
     state: Optional[str] = Query(None, description="State name or state_id (comma-separated for multiple)"),
@@ -380,10 +393,7 @@ async def update_property(property_id: int, request: Request) -> JSONResponse:
 
 
 @properties_router.post("/v1/properties")
-@properties_router.post("/v1/properties/")
-@properties_router.post("/properties")
-@properties_router.post("/properties/")
-async def create_property(request: Request) -> JSONResponse:
+async def create_property(request: Request) -> JSONResponse :
     user_id = getattr(request.state, "user_id", None)
     role = getattr(request.state, "role", None)
     normalized_role = str(role).upper() if role else None
@@ -396,20 +406,35 @@ async def create_property(request: Request) -> JSONResponse:
 
     try:
         body = await request.body()
-        property_data = json.loads(body) if body else {}
+
+        input_validation_response = property_input_validator(body,required_fields=["auction_id","auction_start_date","auction_end_date","emd_amount","reserve_price","auction_type","property_unique_id","property_id","state_id","district_id",
+        "city_id","property_possession_type","property_type","property_sub_type","bank_id"])
+
+        if input_validation_response.get("is_error"):
+            return JSONResponse(status_code=input_validation_response.get("status_code"),content=input_validation_response.get("response"))
+
+        property_service = _get_property_service(request)
+
+        service_response = await property_service.create_property(property_data=input_validation_response.get("response").get("data"), user_id=user_id)
+
+        if service_response.get("is_error"):
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            return JSONResponse(status_code=status_code,content=service_response.get("response"))
+
+        #if the proprty is successfully created update the identities
+        identity_service  = _get_generated_identity_service(request)
+        update_response = await identity_service.update_generated_identity()
+
+        if update_response.get("is_error"):
+            logging.info("Unable to update the Identity")
+
+        return JSONResponse(status_code=status.HTTP_201_CREATED, content={"data": service_response.get("response")})
+
     except Exception:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"data": {"code": "PR116", "message": "Invalid JSON body", "data": None}},
         )
-
-    service = _get_property_service(request)
-    service_response = await service.create_property(property_data=property_data, user_id=user_id)
-
-    if service_response.get("is_error"):
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"data": service_response.get("response")})
-
-    return JSONResponse(status_code=status.HTTP_201_CREATED, content={"data": service_response.get("response")})
 
 
 @properties_router.post("/v1/properties/{property_id}/like")
@@ -463,3 +488,63 @@ async def unlike_property(property_id: int, request: Request) -> JSONResponse:
         status_code=status.HTTP_200_OK,
         content={"data": service_response.get("response")},
     )
+
+
+@properties_router.get('/v1/properties/filter-lookup/{search_parameter}')
+async def get_search_filter_lookup(request:Request, search_parameter:str,sub_search_parameter:int=None) -> JSONResponse:
+
+    print("Im executing")
+
+    filter_service = _get_search_filter_service(request)
+
+    service_response =  await filter_service.get_search_filters(request=request,search_header=search_parameter,query_parameter=sub_search_parameter)
+
+    if service_response.get("is_error"):
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"data": service_response.get("response")},
+        )
+    print(service_response)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"data": service_response.get("response")},
+    )
+
+@properties_router.post('/v1/properties/generate-identity')
+async def generate_identity(request: Request) -> JSONResponse:
+
+    body = await request.body()
+
+    input_validation = validate_identity_generator_input(body=body,required_fields=[IdentityGenerationModules.property_id.value, IdentityGenerationModules.property_unique_id.value,IdentityGenerationModules.auction_id.value])
+
+    if input_validation.get("is_error"):
+        return JSONResponse(status_code=input_validation.get("status_code"),content=input_validation.get("response"))
+
+    service_object = _get_generated_identity_service(request)
+
+    service_response = await service_object.get_available_id_by_name(input_body=input_validation.get("response").get("data"))
+
+
+    if service_response.get("is_error"):
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"data": service_response.get("response")},
+        )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"data": service_response.get("response")},
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -6,7 +6,7 @@ from controller.auth import auth_router
 from controller.properties import properties_router
 from middleware.auth_middleware import auth_middleware
 from fastapi.middleware.cors import CORSMiddleware
-
+from google_bucket_initiation import GoogleBucketStorage
 
 @asynccontextmanager
 async def life_span(app: FastAPI):
@@ -25,6 +25,9 @@ async def life_span(app: FastAPI):
             UNIQUE(user_id, property_id)
         );
     """)
+
+    storage = GoogleBucketStorage()
+    storage.initiate_google_bucket_connection()
 
     yield
     await database_object.close_database_connection()

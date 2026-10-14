@@ -1,7 +1,12 @@
 import json
 import re
+from datetime import date, datetime, timezone
+
 import starlette.status as status
+from pip._internal.utils import logging
+
 from error_codes.auth_error_code import AuthErrorCode
+from error_codes.property_error_code import PropertyErrorCode
 
 
 EMAIL_REGEX = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
@@ -68,6 +73,102 @@ def validate_auth_input(body, required_fields: list, is_login: bool = False) -> 
         return _get_validation_response(AuthErrorCode.AU107.name, AuthErrorCode.AU107.value, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+
+def property_input_validator(
+    body,
+    required_fields: list,
+) -> dict[str, Any] | None:
+    try:
+        dict_body = json.loads(body)
+    except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+        return _get_validation_response(
+            PropertyErrorCode.PR116.name,
+            PropertyErrorCode.PR116.value,
+        )
+
+    if not isinstance(dict_body, dict) or not dict_body:
+        return _get_validation_response(
+            PropertyErrorCode.PR117.name,
+            PropertyErrorCode.PR117.value,
+        )
+
+    try:
+        # Fields that must contain valid dates
+        date_fields = {
+            "auction_start_date",
+            "auction_end_date",
+            "auction_verified_on",
+            "emd_start_date",
+            "emd_end_date"
+
+        }
+
+        # Fields that must be integers
+        int_fields = {
+            "auction_id",
+            "property_id",
+            "state_id",
+            "district_id",
+            "city_id",
+            "bank_id",
+        }
+
+        # Fields that must be numeric
+        numeric_fields = {
+            "emd_amount",
+            "reserve_price",
+            "increment_price"
+        }
+
+        for field in required_fields:
+            value = dict_body.get(field)
+
+            # Check required values
+            if (
+                field not in dict_body
+                or value is None
+            ):
+                return _get_validation_response(
+                    PropertyErrorCode.PR118.name,
+                    PropertyErrorCode.PR118.value,
+                )
+
+            # Convert numeric string IDs to integers
+            if field in int_fields:
+                dict_body[field] = int(value)
+
+            # Validate date fields
+            elif field in date_fields:
+
+                parsed_date = datetime.fromisoformat(value)
+
+                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+
+                dict_body[field] = parsed_date
+
+
+            # Validate monetary/decimal values
+            elif field in numeric_fields:
+
+                dict_body[field] = float(value)
+
+
+        return _get_validation_response(
+            PropertyErrorCode.PR119.name,
+            PropertyErrorCode.PR119.value,
+            is_error=False,
+            status_code=status.HTTP_200_OK,
+            data=dict_body,
+        )
+
+    except Exception:
+        return _get_validation_response(
+            PropertyErrorCode.PR120.name,
+            PropertyErrorCode.PR120.value,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
 def __validate_email(email:str)-> dict[str, bool | dict[str, str | None]] | None:
     try:
         if not isinstance(email, str):
@@ -120,3 +221,37 @@ def __validate_password(password:str)-> dict[str, bool | dict[str, str | None]] 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+def validate_identity_generator_input(body,required_fields: list[str]) -> dict[str, bool | dict[str, str | None]] | None:
+    try:
+
+        body = json.loads(body)
+
+        if not isinstance(body, dict) or not body:
+            return _get_validation_response(
+            PropertyErrorCode.PR117.name,
+            PropertyErrorCode.PR117.value,
+        )
+
+        for field in body:
+
+            value = body.get(field)
+
+            if field not in required_fields or not value:
+                return _get_validation_response(
+                    PropertyErrorCode.PR118.name,
+                    PropertyErrorCode.PR118.value,
+                )
+        return _get_validation_response(
+            PropertyErrorCode.PR119.name,
+            PropertyErrorCode.PR119.value,
+            is_error=False,
+            status_code=status.HTTP_200_OK,
+            data=body,
+        )
+    except Exception as e:
+        print(e)
+        return _get_validation_response(
+            PropertyErrorCode.PR120.name,
+            PropertyErrorCode.PR120.value,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
