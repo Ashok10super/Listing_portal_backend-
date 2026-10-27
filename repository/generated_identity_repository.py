@@ -13,6 +13,14 @@ class GeneratedIdentityRepository:
 
         return {id_name:id}
 
+    async def fetch_all_generated_id(self) -> dict:
+
+        query = "SELECT * FROM generated_module_identity"
+
+        id = await self.database_connection.fetchrow(query)
+
+        return dict(id)
+
 
     async def update_generated_id_by_name(self,id_name,value) -> dict:
         if id_name != IdentityGenerationModules.property_unique_id.name:

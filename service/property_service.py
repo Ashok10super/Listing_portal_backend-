@@ -7,6 +7,7 @@ from error_codes.property_error_code import PropertyErrorCode
 from error_codes.search_filter_error_code import FilterLookupErrorCodes
 from repository.property_repository import PropertyRepository
 from repository.search_filter_repository import SearchFilterRepository
+from service.genearted_identity_service import GeneratedIdentityService
 
 
 class PropertyService:
@@ -190,10 +191,29 @@ class PropertyService:
                 message=PropertyErrorCode.PR109.value,
             )
 
-    async def create_property(self, property_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+    async def create_property(self, property_data: Dict[str, Any], user_id: int,generated_identity_service:GeneratedIdentityService) -> Dict[str, Any]:
         try:
+
+            #get the ids and append the ids to the property_data dict
+            identity_service_response = await generated_identity_service.get_all_available_id()
+
+            if identity_service_response.get("is_error"):
+                return self.__get_service_response(code=PropertyErrorCode.PR109.name,message=PropertyErrorCode.PR109.value,is_error=True)
+
+
+            generated_id = identity_service_response.get("response").get("data")
+
+
+
+            for key,val in generated_id.items():
+                if key == "property_unique_id":
+                    continue
+                else:
+                    generated_id[key] = int(val)
+
+
             created = await self.property_repository.create_property(
-                property_data=property_data, user_id=user_id
+                property_data={**property_data,**generated_id}, user_id=user_id
             )
             #serialize id's
             serialized_property  = self.__serialize_ids(created)

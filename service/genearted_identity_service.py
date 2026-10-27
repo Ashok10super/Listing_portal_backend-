@@ -9,11 +9,9 @@ class GeneratedIdentityService:
     def __init__(self, generate_identity_repo:GeneratedIdentityRepository):
         self.generate_identity_repo = generate_identity_repo
 
-    async def get_available_id_by_name(self,input_body) -> Dict[str, Any]:
+    async def get_all_available_id(self) -> Dict[str, Any]:
         try:
-            for key in input_body:
-                id_name = key
-            property_id_dict = await self.generate_identity_repo.fetch_generated_id_by_name(id_name)
+            property_id_dict = await self.generate_identity_repo.fetch_all_generated_id()
 
             for key, value in property_id_dict.items():
                    property_id_dict[key] = str(value)

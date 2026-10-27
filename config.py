@@ -27,8 +27,8 @@ class IdentityGenerationModules(Enum):
    auction_id = "auction_id"
 
 class AllowedImageExtensions(Enum):
-    jpeg = "image/jpeg",
-    png = "image/png",
+    jpeg = "image/jpeg"
+    png = "image/png"
     webp = "image/webp"
 
 MAX_FILE_SIZE = 200 * 1024

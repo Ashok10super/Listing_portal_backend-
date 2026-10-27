@@ -1,6 +1,7 @@
 import os
+import dotenv
 from google.cloud import storage
-
+dotenv.load_dotenv()
 
 class GoogleBucketStorage:
 
@@ -12,6 +13,7 @@ class GoogleBucketStorage:
         cls.storage_client = storage.Client(
             project=os.getenv("PROJECT_ID")
         )
+
         cls.bucket_connection_object = cls.storage_client.bucket(
             os.getenv("GCS_BUCKET_NAME")
         )

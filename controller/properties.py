@@ -403,11 +403,10 @@ async def create_property(request: Request) -> JSONResponse :
             status_code=status.HTTP_403_FORBIDDEN,
             content={"data": {"code": PropertyErrorCode.PR115.name, "message": "Unauthorized to create property listings", "data": None}},
         )
-
     try:
         body = await request.body()
 
-        input_validation_response = property_input_validator(body,required_fields=["auction_id","auction_start_date","auction_end_date","emd_amount","reserve_price","auction_type","property_unique_id","property_id","state_id","district_id",
+        input_validation_response = property_input_validator(body,required_fields=["auction_start_date","auction_end_date","emd_amount","reserve_price","auction_type","state_id","district_id",
         "city_id","property_possession_type","property_type","property_sub_type","bank_id"])
 
         if input_validation_response.get("is_error"):
@@ -415,14 +414,16 @@ async def create_property(request: Request) -> JSONResponse :
 
         property_service = _get_property_service(request)
 
-        service_response = await property_service.create_property(property_data=input_validation_response.get("response").get("data"), user_id=user_id)
+        identity_service = _get_generated_identity_service(request)
+
+        service_response = await property_service.create_property(property_data=input_validation_response.get("response").get("data"), user_id=user_id,generated_identity_service=identity_service)
 
         if service_response.get("is_error"):
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             return JSONResponse(status_code=status_code,content=service_response.get("response"))
 
         #if the proprty is successfully created update the identities
-        identity_service  = _get_generated_identity_service(request)
+
         update_response = await identity_service.update_generated_identity()
 
         if update_response.get("is_error"):
